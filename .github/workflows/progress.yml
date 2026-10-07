@@ -2,8 +2,9 @@ name: Refresh progress page
 
 on:
   schedule:
-    # Hourly, weekdays, covering 09:00-18:00 UK across BST and GMT.
-    - cron: "0 8-18 * * 1-5"
+    # Hourly, weekdays, covering 09:00-18:00 UK across BST and GMT. Off the
+    # top of the hour, which GitHub's busiest slot and the first to be dropped.
+    - cron: "17 8-18 * * 1-5"
   workflow_dispatch:
 
 permissions:
@@ -25,14 +26,10 @@ jobs:
           SOLIDTIME_ORG: ${{ secrets.SOLIDTIME_ORG }}
         run: python3 scripts/gen_progress.py
 
-      - name: Commit if the numbers moved
+      # Commits every run so the "Last updated" time shows the last check.
+      - name: Commit
         run: |
-          # The date line always changes, so ignore it when deciding.
-          if git diff -U0 -- index.html | grep '^[-+][^-+]' | grep -vq 'Last updated'; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit -am "chore(progress): refresh tracked time from Solidtime"
-            git push
-          else
-            echo "No change since the last run."
-          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(progress): refresh tracked time from Solidtime"
+          git push
