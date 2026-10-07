@@ -18,7 +18,8 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 BASE_URL = os.environ.get("SOLIDTIME_URL", "https://solidtime.zestdev.uk")
 TOKEN = os.environ.get("SOLIDTIME_TOKEN", "")
@@ -109,7 +110,8 @@ def bar(value, total):
 
 
 def write_page(tracked, budget, rows):
-    updated = datetime.now(timezone.utc).strftime("%-d %b %Y")
+    updated = datetime.now(ZoneInfo("Europe/London")).strftime(
+        "%-d %b %Y, %H:%M %Z")
     headline = "%s of %s days used" % (fmt(tracked), fmt(budget))
     sub = "%s days remaining" % fmt(max(0, budget - tracked))
     task_rows = "\n".join(
