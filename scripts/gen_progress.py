@@ -37,6 +37,10 @@ CAPS = {
 
 # Tasks left off the page. Their time still counts towards the total.
 HIDDEN = {"CBHS - Briefing Time"}
+
+# Display names on the page, keyed by task name with the "CBHS - " prefix
+# already stripped.
+LABELS = {"Airtable": "Jess"}
 OUT = os.path.join(os.path.dirname(os.path.dirname(
     os.path.abspath(__file__))), "index.html")
 
@@ -104,6 +108,11 @@ def main():
         print("  %-30s %s%s" % (name, fmt(d), " / %s" % cap if cap else ""))
 
 
+def label(name):
+    name = name.removeprefix("CBHS - ")
+    return LABELS.get(name, name)
+
+
 def bar(value, total):
     pct = min(100, value / total * 100) if total else 0
     return '<div class="bar"><span style="width:%.1f%%"></span></div>' % pct
@@ -116,7 +125,7 @@ def write_page(tracked, budget, rows):
     sub = "%s days remaining" % fmt(max(0, budget - tracked))
     task_rows = "\n".join(
         '<li><div class="row"><span>%s</span><b>%s%s d</b></div>%s</li>'
-        % (html.escape(name.removeprefix("CBHS - ")), fmt(d),
+        % (html.escape(label(name)), fmt(d),
            " / %s" % cap if cap else "", bar(d, cap or tracked))
         for name, d, cap in rows)
 
