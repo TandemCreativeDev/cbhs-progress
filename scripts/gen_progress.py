@@ -18,7 +18,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 BASE_URL = os.environ.get("SOLIDTIME_URL", "https://solidtime.zestdev.uk")
@@ -29,6 +29,7 @@ HOURS_PER_DAY = 7.5
 # Invoices go out at end of day every other Friday, counting from this one.
 INVOICE_ANCHOR = date(2026, 10, 30)
 INVOICE_CYCLE_DAYS = 14
+LONDON = ZoneInfo("Europe/London")
 
 # Day caps per Solidtime task, matched by exact name. Tasks not listed here
 # still get a row, showing tracked time only.
@@ -66,6 +67,17 @@ def api(path, params=None):
             return json.load(r)["data"]
     except urllib.error.HTTPError as e:
         sys.exit("HTTP %d on %s\n%s" % (e.code, path, e.read()[:300]))
+
+
+def last_invoice_date(today):
+    """Date of the last invoice. One due today hasn't gone out until EOD, so
+    that day still counts from the previous invoice."""
+    age = (today - INVOICE_ANCHOR).days % INVOICE_CYCLE_DAYS
+    return today - timedelta(days=age or INVOICE_CYCLE_DAYS)
+
+
+def utc_param(moment):
+    return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def days(seconds):
@@ -106,7 +118,18 @@ def main():
     tracked = days(result["seconds"] or 0)
     budget = sum(CAPS.values())
 
-    write_page(tracked, budget, rows)
+    # The invoice covers everything up to the end of its day, so unbilled time
+    # starts at midnight UK time the day after.
+    now = datetime.now(LONDON)
+    last_invoice = last_invoice_date(now.date())
+    unbilled_from = datetime.combine(last_invoice + timedelta(days=1),
+                                     time.min, LONDON)
+    unbilled = api("/v1/organizations/%s/time-entries/aggregate" % org,
+                   {"project_ids[]": project["id"], "billable": "true",
+                    "start": utc_param(unbilled_from), "end": utc_param(now)})
+    billable = days(unbilled["seconds"] or 0)
+
+    write_page(tracked, budget, rows, billable, last_invoice, now)
     print("tracked %s / %s days" % (fmt(tracked), fmt(budget)))
     for name, d, cap in rows:
         print("  %-30s %s%s" % (name, fmt(d), " / %s" % cap if cap else ""))
@@ -122,21 +145,13 @@ def bar(value, total):
     return '<div class="bar"><span style="width:%.1f%%"></span></div>' % pct
 
 
-def days_since_invoice(today):
-    """Days since the last invoice. One due today hasn't gone out until EOD,
-    so that day still counts from the previous invoice."""
-    return (today - INVOICE_ANCHOR).days % INVOICE_CYCLE_DAYS or INVOICE_CYCLE_DAYS
-
-
-def write_page(tracked, budget, rows):
-    now = datetime.now(ZoneInfo("Europe/London"))
+def write_page(tracked, budget, rows, billable, last_invoice, now):
     updated = now.strftime("%-d %b %Y, %H:%M %Z")
     headline = "%s of %s days used" % (fmt(tracked), fmt(budget))
     sub = "%s days remaining" % fmt(max(0, budget - tracked))
-    since = days_since_invoice(now.date())
-    last_invoice = now.date() - timedelta(days=since)
-    invoice = "%d day%s since last invoice (%s)" % (
-        since, "" if since == 1 else "s", last_invoice.strftime("%-d %b"))
+    invoice = "%s billable day%s since last invoice (%s)" % (
+        fmt(billable), "" if fmt(billable) == "1" else "s",
+        last_invoice.strftime("%-d %b"))
     task_rows = "\n".join(
         '<li><div class="row"><span>%s</span><b>%s%s d</b></div>%s</li>'
         % (html.escape(label(name)), fmt(d),

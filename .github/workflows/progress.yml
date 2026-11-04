@@ -5,7 +5,7 @@ on:
     # Hourly, weekdays, covering 09:00-18:00 UK across BST and GMT. Off the
     # top of the hour, which GitHub's busiest slot and the first to be dropped.
     - cron: "17 8-18 * * 1-5"
-    # Once a day at weekends, so the days-since-invoice count stays right.
+    # Once a day at weekends, so the billable count resets the day after an invoice.
     - cron: "17 8 * * 0,6"
   workflow_dispatch:
 
