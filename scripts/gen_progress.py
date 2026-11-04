@@ -18,13 +18,17 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 BASE_URL = os.environ.get("SOLIDTIME_URL", "https://solidtime.zestdev.uk")
 TOKEN = os.environ.get("SOLIDTIME_TOKEN", "")
 PROJECT_NAME = "CBHS 2026 Website"
 HOURS_PER_DAY = 7.5
+
+# Invoices go out at end of day every other Friday, counting from this one.
+INVOICE_ANCHOR = date(2026, 10, 30)
+INVOICE_CYCLE_DAYS = 14
 
 # Day caps per Solidtime task, matched by exact name. Tasks not listed here
 # still get a row, showing tracked time only.
@@ -118,19 +122,29 @@ def bar(value, total):
     return '<div class="bar"><span style="width:%.1f%%"></span></div>' % pct
 
 
+def days_since_invoice(today):
+    """Days since the last invoice. One due today hasn't gone out until EOD,
+    so that day still counts from the previous invoice."""
+    return (today - INVOICE_ANCHOR).days % INVOICE_CYCLE_DAYS or INVOICE_CYCLE_DAYS
+
+
 def write_page(tracked, budget, rows):
-    updated = datetime.now(ZoneInfo("Europe/London")).strftime(
-        "%-d %b %Y, %H:%M %Z")
+    now = datetime.now(ZoneInfo("Europe/London"))
+    updated = now.strftime("%-d %b %Y, %H:%M %Z")
     headline = "%s of %s days used" % (fmt(tracked), fmt(budget))
     sub = "%s days remaining" % fmt(max(0, budget - tracked))
+    since = days_since_invoice(now.date())
+    last_invoice = now.date() - timedelta(days=since)
+    invoice = "%d day%s since last invoice (%s)" % (
+        since, "" if since == 1 else "s", last_invoice.strftime("%-d %b"))
     task_rows = "\n".join(
         '<li><div class="row"><span>%s</span><b>%s%s d</b></div>%s</li>'
         % (html.escape(label(name)), fmt(d),
            " / %s" % cap if cap else "", bar(d, cap or tracked))
         for name, d, cap in rows)
 
-    page = TEMPLATE.format(headline=headline, sub=sub, updated=updated,
-                           total_bar=bar(tracked, budget),
+    page = TEMPLATE.format(headline=headline, sub=sub, invoice=invoice,
+                           updated=updated, total_bar=bar(tracked, budget),
                            rows=task_rows)
     with open(OUT, "w") as f:
         f.write(page)
@@ -175,6 +189,7 @@ TEMPLATE = """<!doctype html>
   <h1>{headline}</h1>
   {total_bar}
   <p class="sub">{sub}</p>
+  <p class="sub">{invoice}</p>
   <h2>Breakdown</h2>
   <ul>
 {rows}
